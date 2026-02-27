@@ -2,11 +2,10 @@
 /**
  * Karateka GIF – Econovex (entorno test)
  *
- * Intercepta action.doActionButton (el punto real donde Odoo 19 ejecuta
- * los botones de formulario type="object") para detectar:
- *  - sale.order / action_confirm           → GIF directo
- *  - sale.order / action_quotation_send    → abre wizard → GIF al confirmar el wizard
- *  - account.move / action_send_and_print  → abre wizard → GIF al confirmar el wizard
+ * Triggers configurados:
+ *  - sale.order / action_confirm              → "¡CONFIRMADO!" en verde
+ *  - account.move.send.wizard / action_send_and_print → "¡ENVIADO!" en blanco
+ *  - sale.order / action_quotation_send → wizard correo → "¡ENVIADO!" en blanco
  */
 
 import { registry } from "@web/core/registry";
@@ -14,45 +13,69 @@ import { registry } from "@web/core/registry";
 // ── Configuración ─────────────────────────────────────────────────────────────
 const GIF_URL = "/econovex_karateka/static/src/img/karateka.gif";
 const GIF_DURATION_MS = 3500;
-const DEBUG = true; // poner false cuando todo funcione
+const DEBUG = false;
 
 function log(...args) {
     if (DEBUG) console.log("[🥋 Karateka]", ...args);
 }
 
 // ── Triggers ──────────────────────────────────────────────────────────────────
+// Cada trigger lleva su propio texto y color de cartel.
 const DIRECT_TRIGGERS = [
-    { model: "sale.order",               method: "action_confirm" },
-    // En Odoo 19 el wizard de envío de facturas usa este modelo y método
-    { model: "account.move.send.wizard", method: "action_send_and_print" },
+    {
+        model: "sale.order",
+        method: "action_confirm",
+        label: "¡CONFIRMADO!",
+        labelColor: "#4caf50",   // verde
+    },
+    {
+        model: "account.move.send.wizard",
+        method: "action_send_and_print",
+        label: "¡ENVIADO!",
+        labelColor: "#ffffff",
+    },
 ];
 
 const WIZARD_OPENERS = [
     { model: "sale.order", method: "action_quotation_send" },
 ];
 
-// Cuando el wizard de presupuesto envía el correo
 const WIZARD_SENDERS = [
-    { model: "mail.compose.message", method: "action_send_mail" },
+    {
+        model: "mail.compose.message",
+        method: "action_send_mail",
+        label: "¡ENVIADO!",
+        labelColor: "#ffffff",
+    },
 ];
 
 let pendingKarateka = false;
 
-function matchesList(list, model, method) {
-    return list.some((t) => t.model === model && t.method === method);
+function findTrigger(list, model, method) {
+    return list.find((t) => t.model === model && t.method === method) || null;
 }
 
 function handleTrigger(model, method) {
     log("acción detectada →", model, "::", method);
 
-    if (matchesList(DIRECT_TRIGGERS, model, method)) {
-        showKaratekaGif();
-    } else if (matchesList(WIZARD_OPENERS, model, method)) {
+    const direct = findTrigger(DIRECT_TRIGGERS, model, method);
+    if (direct) {
+        showKaratekaGif(direct.label, direct.labelColor);
+        return;
+    }
+
+    if (findTrigger(WIZARD_OPENERS, model, method)) {
         log("Bandera activada, esperando wizard...");
         pendingKarateka = true;
-    } else if (pendingKarateka && matchesList(WIZARD_SENDERS, model, method)) {
-        pendingKarateka = false;
-        showKaratekaGif();
+        return;
+    }
+
+    if (pendingKarateka) {
+        const sender = findTrigger(WIZARD_SENDERS, model, method);
+        if (sender) {
+            pendingKarateka = false;
+            showKaratekaGif(sender.label, sender.labelColor);
+        }
     }
 }
 
@@ -87,17 +110,17 @@ style.textContent = `
         100% { transform: rotate(0deg)   translateX(0);     }
     }
     #karatekaOverlay .karateka-label {
-        margin-top: 20px; font-size: 2rem; font-weight: 700;
-        color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.8);
-        letter-spacing: 2px;
+        margin-top: 20px; font-size: 2.2rem; font-weight: 800;
+        text-shadow: 0 2px 10px rgba(0,0,0,0.9);
+        letter-spacing: 3px;
     }
 `;
 document.head.appendChild(style);
 
 // ── Mostrar overlay ───────────────────────────────────────────────────────────
-function showKaratekaGif() {
+function showKaratekaGif(label = "¡ENVIADO!", labelColor = "#ffffff") {
     if (document.getElementById("karatekaOverlay")) return;
-    log("¡Mostrando overlay!");
+    log("¡Mostrando overlay!", label);
 
     const overlay = document.createElement("div");
     overlay.id = "karatekaOverlay";
@@ -106,7 +129,6 @@ function showKaratekaGif() {
     img.src = GIF_URL + "?t=" + Date.now();
     img.alt = "¡KARATEKA!";
     img.onerror = () => {
-        log("GIF no encontrado — mostrando emoji de fallback");
         img.remove();
         const kick = document.createElement("div");
         kick.className = "karateka-fallback";
@@ -114,36 +136,31 @@ function showKaratekaGif() {
         overlay.appendChild(kick);
     };
 
-    const label = document.createElement("div");
-    label.className = "karateka-label";
-    label.textContent = "¡ENVIADO!";
+    const labelEl = document.createElement("div");
+    labelEl.className = "karateka-label";
+    labelEl.textContent = label;
+    labelEl.style.color = labelColor;
 
     overlay.appendChild(img);
-    overlay.appendChild(label);
+    overlay.appendChild(labelEl);
     document.body.appendChild(overlay);
 
     const timer = setTimeout(() => overlay.remove(), GIF_DURATION_MS);
     overlay.addEventListener("click", () => { clearTimeout(timer); overlay.remove(); });
 }
 
-// ── Atajo de teclado para probar el overlay ───────────────────────────────────
-// Pulsa Ctrl+Shift+K en cualquier momento para forzar el overlay.
+// ── Atajo de teclado para probar ──────────────────────────────────────────────
 document.addEventListener("keydown", (e) => {
     if (e.ctrlKey && e.shiftKey && e.key === "K") {
-        log("Atajo Ctrl+Shift+K → forzando overlay de prueba");
-        showKaratekaGif();
+        showKaratekaGif("¡CONFIRMADO!", "#4caf50");
     }
 });
 
 // ── Servicio Odoo ─────────────────────────────────────────────────────────────
-// En Odoo 19, todos los botones type="object" de formulario pasan por
-// action.doActionButton({ name, resModel, type, ... }).
-// Lo envolvemos aquí para detectar los triggers.
 const karatekaService = {
     dependencies: ["action", "orm"],
     start(env, { action, orm }) {
 
-        // — Interceptar action.doActionButton (botones de formulario) —
         if (typeof action.doActionButton === "function") {
             const _origDoAction = action.doActionButton.bind(action);
             action.doActionButton = async function (params, ...rest) {
@@ -152,15 +169,11 @@ const karatekaService = {
                     const model  = params && params.resModel;
                     const method = params && params.name;
                     if (model && method) handleTrigger(model, method);
-                } catch (e) { /* nunca romper Odoo */ }
+                } catch (e) {}
                 return result;
             };
-            log("action.doActionButton interceptado ✓");
-        } else {
-            log("AVISO: action.doActionButton no encontrado. Métodos disponibles:", Object.keys(action));
         }
 
-        // — Interceptar orm.call como red de seguridad (wizards internos) —
         if (typeof orm.call === "function") {
             const _origOrmCall = orm.call.bind(orm);
             orm.call = async function (model, method, ...rest) {
@@ -168,7 +181,6 @@ const karatekaService = {
                 try { handleTrigger(model, method); } catch (e) {}
                 return result;
             };
-            log("orm.call interceptado ✓");
         }
     },
 };
