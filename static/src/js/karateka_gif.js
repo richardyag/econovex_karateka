@@ -2,10 +2,11 @@
 /**
  * Karateka GIF – Econovex (entorno test)
  *
- * Se registra como servicio Odoo para envolver orm.call y detectar:
+ * Intercepta action.doActionButton (el punto real donde Odoo 19 ejecuta
+ * los botones de formulario type="object") para detectar:
  *  - sale.order / action_confirm           → GIF directo
- *  - sale.order / action_quotation_send    → abre wizard → GIF al enviar
- *  - account.move / action_send_and_print  → abre wizard → GIF al enviar
+ *  - sale.order / action_quotation_send    → abre wizard → GIF al confirmar el wizard
+ *  - account.move / action_send_and_print  → abre wizard → GIF al confirmar el wizard
  */
 
 import { registry } from "@web/core/registry";
@@ -29,6 +30,9 @@ const WIZARD_OPENERS = [
     { model: "account.move", method: "action_send_and_print" },
 ];
 
+// Cuando un wizard de envío se confirma, el botón del wizard
+// también pasa por doActionButton (o por orm.call).
+// Cubrimos ambas posibilidades en WIZARD_SENDERS.
 const WIZARD_SENDERS = [
     { model: "mail.compose.message", method: "action_send_mail" },
     { model: "account.move.send",    method: "action_send_and_print" },
@@ -39,6 +43,20 @@ let pendingKarateka = false;
 
 function matchesList(list, model, method) {
     return list.some((t) => t.model === model && t.method === method);
+}
+
+function handleTrigger(model, method) {
+    log("acción detectada →", model, "::", method);
+
+    if (matchesList(DIRECT_TRIGGERS, model, method)) {
+        showKaratekaGif();
+    } else if (matchesList(WIZARD_OPENERS, model, method)) {
+        log("Bandera activada, esperando wizard...");
+        pendingKarateka = true;
+    } else if (pendingKarateka && matchesList(WIZARD_SENDERS, model, method)) {
+        pendingKarateka = false;
+        showKaratekaGif();
+    }
 }
 
 // ── CSS del overlay ───────────────────────────────────────────────────────────
@@ -82,7 +100,7 @@ document.head.appendChild(style);
 // ── Mostrar overlay ───────────────────────────────────────────────────────────
 function showKaratekaGif() {
     if (document.getElementById("karatekaOverlay")) return;
-    log("Mostrando overlay");
+    log("¡Mostrando overlay!");
 
     const overlay = document.createElement("div");
     overlay.id = "karatekaOverlay";
@@ -111,40 +129,50 @@ function showKaratekaGif() {
     overlay.addEventListener("click", () => { clearTimeout(timer); overlay.remove(); });
 }
 
-// ── Lógica de triggers ────────────────────────────────────────────────────────
-function handleOrmCall(model, method) {
-    log("orm.call →", model, "::", method);
-
-    if (matchesList(DIRECT_TRIGGERS, model, method)) {
-        showKaratekaGif();
-    } else if (matchesList(WIZARD_OPENERS, model, method)) {
-        log("Bandera activada, esperando wizard...");
-        pendingKarateka = true;
-    } else if (pendingKarateka && matchesList(WIZARD_SENDERS, model, method)) {
-        pendingKarateka = false;
+// ── Atajo de teclado para probar el overlay ───────────────────────────────────
+// Pulsa Ctrl+Shift+K en cualquier momento para forzar el overlay.
+document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key === "K") {
+        log("Atajo Ctrl+Shift+K → forzando overlay de prueba");
         showKaratekaGif();
     }
-}
+});
 
 // ── Servicio Odoo ─────────────────────────────────────────────────────────────
-// Al registrarlo en "services", Odoo lo inicia al arrancar la app.
-// Envolvemos orm.call para interceptar todas las llamadas a métodos Python.
+// En Odoo 19, todos los botones type="object" de formulario pasan por
+// action.doActionButton({ name, resModel, type, ... }).
+// Lo envolvemos aquí para detectar los triggers.
 const karatekaService = {
-    dependencies: ["orm"],
-    start(env, { orm }) {
-        if (!orm || typeof orm.call !== "function") {
-            log("orm.call no disponible");
-            return;
+    dependencies: ["action", "orm"],
+    start(env, { action, orm }) {
+
+        // — Interceptar action.doActionButton (botones de formulario) —
+        if (typeof action.doActionButton === "function") {
+            const _origDoAction = action.doActionButton.bind(action);
+            action.doActionButton = async function (params, ...rest) {
+                const result = await _origDoAction(params, ...rest);
+                try {
+                    const model  = params && params.resModel;
+                    const method = params && params.name;
+                    if (model && method) handleTrigger(model, method);
+                } catch (e) { /* nunca romper Odoo */ }
+                return result;
+            };
+            log("action.doActionButton interceptado ✓");
+        } else {
+            log("AVISO: action.doActionButton no encontrado. Métodos disponibles:", Object.keys(action));
         }
 
-        const _originalCall = orm.call.bind(orm);
-        orm.call = async function (model, method, ...rest) {
-            const result = await _originalCall(model, method, ...rest);
-            try { handleOrmCall(model, method); } catch (e) { /* nunca romper Odoo */ }
-            return result;
-        };
-
-        log("orm.call interceptado vía servicio Odoo ✓");
+        // — Interceptar orm.call como red de seguridad (wizards internos) —
+        if (typeof orm.call === "function") {
+            const _origOrmCall = orm.call.bind(orm);
+            orm.call = async function (model, method, ...rest) {
+                const result = await _origOrmCall(model, method, ...rest);
+                try { handleTrigger(model, method); } catch (e) {}
+                return result;
+            };
+            log("orm.call interceptado ✓");
+        }
     },
 };
 
