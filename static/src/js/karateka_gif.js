@@ -26,7 +26,7 @@ const DIRECT_TRIGGERS = [
         model: "sale.order",
         method: "action_confirm",
         label: "¡CONFIRMADO!",
-        labelColor: "#ffd700",
+        labelColor: "#4caf50",
     },
     {
         model: "account.move.send.wizard",
@@ -155,7 +155,7 @@ function showKaratekaGif(label = "¡ENVIADO!", labelColor = "#ffffff") {
 // ── Atajo de teclado para probar ──────────────────────────────────────────────
 document.addEventListener("keydown", (e) => {
     if (e.ctrlKey && e.shiftKey && e.key === "K") {
-        showKaratekaGif("¡CONFIRMADO!", "#4caf50");
+        showKaratekaGif("¡ENVIADO!", "#ffd700");
     }
 });
 
