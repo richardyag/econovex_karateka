@@ -161,6 +161,19 @@
         promise.then(function (response) {
             try {
                 var url = args[0] instanceof Request ? args[0].url : String(args[0] || '');
+
+                // DEBUG: loguear TODAS las llamadas /web/ para ver qué URLs usa Odoo 19
+                if (DEBUG && url.indexOf('/web/') !== -1 &&
+                    url.indexOf('.js') === -1 && url.indexOf('.css') === -1 &&
+                    url.indexOf('.png') === -1 && url.indexOf('.gif') === -1 &&
+                    url.indexOf('.woff') === -1 && url.indexOf('/assets') === -1) {
+                    var rawBodyDebug = args[1] && args[1].body;
+                    var bodySnippet = typeof rawBodyDebug === 'string'
+                        ? rawBodyDebug.substring(0, 200)
+                        : '(no body)';
+                    log('FETCH →', url, '| body:', bodySnippet);
+                }
+
                 if (url.indexOf('/web/dataset/call_kw') === -1) return;
 
                 var rawBody = args[1] && args[1].body;
