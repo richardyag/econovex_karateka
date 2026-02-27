@@ -43,7 +43,7 @@ const DIRECT_TRIGGERS = [
         method: "action_send_and_print",
         label: "¡ENVIADO!",
         labelColor: "#ffd700",
-        gifUrl: GIF_FIGHTER,
+        gifUrl: GIF_FACTURA,
     },
 ];
 
