@@ -2,7 +2,7 @@
 {
     'name': 'Karateka GIF',
     'version': '19.0.1.0.0',
-    'category': 'Hidden',
+    'category': 'Extra Tools',
     'summary': 'GIF de karateka al enviar facturas/presupuestos y confirmar ventas (entorno test)',
     'author': 'Econovex',
     'website': 'https://www.econovex.com',
@@ -14,5 +14,5 @@
         ],
     },
     'installable': True,
-    'application': False,
+    'application': True,
 }
