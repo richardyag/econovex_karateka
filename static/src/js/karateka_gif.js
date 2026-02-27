@@ -1,215 +1,151 @@
+/** @odoo-module **/
 /**
  * Karateka GIF – Econovex (entorno test)
  *
- * Muestra un GIF de karateka cuando:
- *  - Se confirma una venta       → sale.order / action_confirm
- *  - Se envía un presupuesto     → sale.order / action_quotation_send → wizard de correo
- *  - Se envía una factura        → account.move / action_send_and_print → wizard account.move.send
+ * Se registra como servicio Odoo para envolver orm.call y detectar:
+ *  - sale.order / action_confirm           → GIF directo
+ *  - sale.order / action_quotation_send    → abre wizard → GIF al enviar
+ *  - account.move / action_send_and_print  → abre wizard → GIF al enviar
  */
-(function () {
-    'use strict';
 
-    // ── Configuración ─────────────────────────────────────────────────────────
-    var GIF_URL = '/econovex_karateka/static/src/img/karateka.gif';
-    var GIF_DURATION_MS = 3500;
+import { registry } from "@web/core/registry";
 
-    // DEBUG: activar para ver logs en la consola del navegador.
-    // Poner a false una vez que el módulo funcione correctamente.
-    var DEBUG = true;
+// ── Configuración ─────────────────────────────────────────────────────────────
+const GIF_URL = "/econovex_karateka/static/src/img/karateka.gif";
+const GIF_DURATION_MS = 3500;
+const DEBUG = true; // poner false cuando todo funcione
 
-    function log() {
-        if (DEBUG) console.log.apply(console, ['[🥋 Karateka]'].concat(Array.prototype.slice.call(arguments)));
+function log(...args) {
+    if (DEBUG) console.log("[🥋 Karateka]", ...args);
+}
+
+// ── Triggers ──────────────────────────────────────────────────────────────────
+const DIRECT_TRIGGERS = [
+    { model: "sale.order", method: "action_confirm" },
+];
+
+const WIZARD_OPENERS = [
+    { model: "sale.order",   method: "action_quotation_send" },
+    { model: "account.move", method: "action_send_and_print" },
+];
+
+const WIZARD_SENDERS = [
+    { model: "mail.compose.message", method: "action_send_mail" },
+    { model: "account.move.send",    method: "action_send_and_print" },
+    { model: "account.move.send",    method: "action_send" },
+];
+
+let pendingKarateka = false;
+
+function matchesList(list, model, method) {
+    return list.some((t) => t.model === model && t.method === method);
+}
+
+// ── CSS del overlay ───────────────────────────────────────────────────────────
+const style = document.createElement("style");
+style.textContent = `
+    #karatekaOverlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.65);
+        z-index: 99999;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        cursor: pointer;
+        animation: karatekaIn 0.25s ease;
     }
-
-    // ── Triggers ──────────────────────────────────────────────────────────────
-
-    // Acciones directas (sin wizard): el GIF aparece inmediatamente.
-    var DIRECT_TRIGGERS = [
-        { model: 'sale.order', method: 'action_confirm' },
-    ];
-
-    // Acciones que ABREN un wizard de envío: activan la bandera.
-    var WIZARD_OPENERS = [
-        { model: 'sale.order',   method: 'action_quotation_send' },
-        { model: 'account.move', method: 'action_send_and_print' },
-    ];
-
-    // Acciones dentro del wizard que ejecutan el envío real.
-    var WIZARD_SENDERS = [
-        { model: 'mail.compose.message', method: 'action_send_mail' },
-        { model: 'account.move.send',    method: 'action_send_and_print' },
-        { model: 'account.move.send',    method: 'action_send' },
-    ];
-
-    var pendingKarateka = false;
-
-    // ── CSS del overlay ───────────────────────────────────────────────────────
-    var style = document.createElement('style');
-    style.textContent = [
-        '#karatekaOverlay {',
-        '  position: fixed; inset: 0;',
-        '  background: rgba(0,0,0,0.65);',
-        '  z-index: 99999;',
-        '  display: flex; flex-direction: column;',
-        '  align-items: center; justify-content: center;',
-        '  cursor: pointer;',
-        '  animation: karatekaIn 0.25s ease;',
-        '}',
-        '@keyframes karatekaIn {',
-        '  from { opacity:0; transform:scale(0.85); }',
-        '  to   { opacity:1; transform:scale(1);    }',
-        '}',
-        '#karatekaOverlay img {',
-        '  max-width:80vw; max-height:75vh;',
-        '  border-radius:12px;',
-        '  box-shadow:0 24px 64px rgba(0,0,0,0.6);',
-        '}',
-        '#karatekaOverlay .karateka-fallback {',
-        '  font-size:110px; line-height:1; text-align:center;',
-        '  animation: karatekaKick 0.4s ease;',
-        '}',
-        '@keyframes karatekaKick {',
-        '  0%   { transform: rotate(-10deg) translateX(-30px); }',
-        '  60%  { transform: rotate(15deg)  translateX(20px);  }',
-        '  100% { transform: rotate(0deg)   translateX(0);     }',
-        '}',
-        '#karatekaOverlay .karateka-label {',
-        '  margin-top:20px; font-size:2rem; font-weight:700;',
-        '  color:#fff; text-shadow:0 2px 8px rgba(0,0,0,0.8);',
-        '  letter-spacing:2px;',
-        '}',
-    ].join('\n');
-    document.head.appendChild(style);
-
-    // ── Mostrar overlay ───────────────────────────────────────────────────────
-    function showKaratekaGif() {
-        if (document.getElementById('karatekaOverlay')) return;
-        log('Mostrando overlay');
-
-        var overlay = document.createElement('div');
-        overlay.id = 'karatekaOverlay';
-
-        var img = document.createElement('img');
-        img.src = GIF_URL + '?t=' + Date.now();
-        img.alt = '¡KARATEKA!';
-
-        // Fallback: emoji animado si el GIF no está disponible todavía
-        img.onerror = function () {
-            log('GIF no encontrado — mostrando fallback emoji');
-            img.remove();
-            var kick = document.createElement('div');
-            kick.className = 'karateka-fallback';
-            kick.textContent = '🥋';
-            overlay.appendChild(kick);
-        };
-
-        var label = document.createElement('div');
-        label.className = 'karateka-label';
-        label.textContent = '¡ENVIADO!';
-
-        overlay.appendChild(img);
-        overlay.appendChild(label);
-        document.body.appendChild(overlay);
-
-        var timer = setTimeout(function () { overlay.remove(); }, GIF_DURATION_MS);
-        overlay.addEventListener('click', function () { clearTimeout(timer); overlay.remove(); });
+    @keyframes karatekaIn {
+        from { opacity:0; transform:scale(0.85); }
+        to   { opacity:1; transform:scale(1);    }
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-    function matchesList(list, model, method) {
-        for (var i = 0; i < list.length; i++) {
-            if (list[i].model === model && list[i].method === method) return true;
-        }
-        return false;
+    #karatekaOverlay img {
+        max-width: 80vw; max-height: 75vh;
+        border-radius: 12px;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.6);
     }
-
-    /**
-     * Extrae modelo y método de la llamada fetch.
-     * Odoo 17+ puede codificarlos en la URL (/web/dataset/call_kw/model/method)
-     * o en el body JSON (params.model / params.method).
-     */
-    function extractModelMethod(url, rawBody) {
-        // Intento 1: en la URL  →  /web/dataset/call_kw/sale.order/action_confirm
-        var urlMatch = url.match(/\/web\/dataset\/call_kw\/([^/?#]+)\/([^/?#\s]+)/);
-        if (urlMatch) return { model: urlMatch[1], method: urlMatch[2] };
-
-        // Intento 2: en el body JSON
-        if (rawBody && typeof rawBody === 'string') {
-            try {
-                var body = JSON.parse(rawBody);
-                var p = body && body.params;
-                if (p && p.model && p.method) return { model: p.model, method: p.method };
-            } catch (e) { /* ignorar */ }
-        }
-
-        return null;
+    #karatekaOverlay .karateka-fallback {
+        font-size: 110px; line-height: 1;
+        animation: karatekaKick 0.4s ease;
     }
-
-    function checkSuccess(clonedResponse, callback) {
-        clonedResponse.json().then(function (data) {
-            if (data && data.result !== undefined) callback();
-        }).catch(function () { /* ignorar */ });
+    @keyframes karatekaKick {
+        0%   { transform: rotate(-10deg) translateX(-30px); }
+        60%  { transform: rotate(15deg)  translateX(20px);  }
+        100% { transform: rotate(0deg)   translateX(0);     }
     }
+    #karatekaOverlay .karateka-label {
+        margin-top: 20px; font-size: 2rem; font-weight: 700;
+        color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+        letter-spacing: 2px;
+    }
+`;
+document.head.appendChild(style);
 
-    // ── Interceptar window.fetch ──────────────────────────────────────────────
-    var originalFetch = window.fetch;
+// ── Mostrar overlay ───────────────────────────────────────────────────────────
+function showKaratekaGif() {
+    if (document.getElementById("karatekaOverlay")) return;
+    log("Mostrando overlay");
 
-    window.fetch = function () {
-        var args = Array.prototype.slice.call(arguments);
-        var promise = originalFetch.apply(this, args);
+    const overlay = document.createElement("div");
+    overlay.id = "karatekaOverlay";
 
-        promise.then(function (response) {
-            try {
-                var url = args[0] instanceof Request ? args[0].url : String(args[0] || '');
-
-                // DEBUG: loguear TODAS las llamadas /web/ para ver qué URLs usa Odoo 19
-                if (DEBUG && url.indexOf('/web/') !== -1 &&
-                    url.indexOf('.js') === -1 && url.indexOf('.css') === -1 &&
-                    url.indexOf('.png') === -1 && url.indexOf('.gif') === -1 &&
-                    url.indexOf('.woff') === -1 && url.indexOf('/assets') === -1) {
-                    var rawBodyDebug = args[1] && args[1].body;
-                    var bodySnippet = typeof rawBodyDebug === 'string'
-                        ? rawBodyDebug.substring(0, 200)
-                        : '(no body)';
-                    log('FETCH →', url, '| body:', bodySnippet);
-                }
-
-                if (url.indexOf('/web/dataset/call_kw') === -1) return;
-
-                var rawBody = args[1] && args[1].body;
-                var info = extractModelMethod(url, rawBody);
-                if (!info) return;
-
-                var model  = info.model;
-                var method = info.method;
-
-                log('call_kw →', model, '::', method);
-
-                if (matchesList(DIRECT_TRIGGERS, model, method)) {
-                    checkSuccess(response.clone(), showKaratekaGif);
-
-                } else if (matchesList(WIZARD_OPENERS, model, method)) {
-                    checkSuccess(response.clone(), function () {
-                        log('Bandera activada, esperando wizard...');
-                        pendingKarateka = true;
-                    });
-
-                } else if (pendingKarateka && matchesList(WIZARD_SENDERS, model, method)) {
-                    checkSuccess(response.clone(), function () {
-                        pendingKarateka = false;
-                        showKaratekaGif();
-                    });
-                }
-            } catch (e) {
-                log('Error en interceptor:', e);
-            }
-        });
-
-        return promise;
+    const img = document.createElement("img");
+    img.src = GIF_URL + "?t=" + Date.now();
+    img.alt = "¡KARATEKA!";
+    img.onerror = () => {
+        log("GIF no encontrado — mostrando emoji de fallback");
+        img.remove();
+        const kick = document.createElement("div");
+        kick.className = "karateka-fallback";
+        kick.textContent = "🥋";
+        overlay.appendChild(kick);
     };
 
-    window.addEventListener('hashchange', function () { pendingKarateka = false; });
+    const label = document.createElement("div");
+    label.className = "karateka-label";
+    label.textContent = "¡ENVIADO!";
 
-    log('Módulo cargado — fetch interceptado ✓');
+    overlay.appendChild(img);
+    overlay.appendChild(label);
+    document.body.appendChild(overlay);
 
-})();
+    const timer = setTimeout(() => overlay.remove(), GIF_DURATION_MS);
+    overlay.addEventListener("click", () => { clearTimeout(timer); overlay.remove(); });
+}
+
+// ── Lógica de triggers ────────────────────────────────────────────────────────
+function handleOrmCall(model, method) {
+    log("orm.call →", model, "::", method);
+
+    if (matchesList(DIRECT_TRIGGERS, model, method)) {
+        showKaratekaGif();
+    } else if (matchesList(WIZARD_OPENERS, model, method)) {
+        log("Bandera activada, esperando wizard...");
+        pendingKarateka = true;
+    } else if (pendingKarateka && matchesList(WIZARD_SENDERS, model, method)) {
+        pendingKarateka = false;
+        showKaratekaGif();
+    }
+}
+
+// ── Servicio Odoo ─────────────────────────────────────────────────────────────
+// Al registrarlo en "services", Odoo lo inicia al arrancar la app.
+// Envolvemos orm.call para interceptar todas las llamadas a métodos Python.
+const karatekaService = {
+    dependencies: ["orm"],
+    start(env, { orm }) {
+        if (!orm || typeof orm.call !== "function") {
+            log("orm.call no disponible");
+            return;
+        }
+
+        const _originalCall = orm.call.bind(orm);
+        orm.call = async function (model, method, ...rest) {
+            const result = await _originalCall(model, method, ...rest);
+            try { handleOrmCall(model, method); } catch (e) { /* nunca romper Odoo */ }
+            return result;
+        };
+
+        log("orm.call interceptado vía servicio Odoo ✓");
+    },
+};
+
+registry.category("services").add("karateka_gif", karatekaService);
