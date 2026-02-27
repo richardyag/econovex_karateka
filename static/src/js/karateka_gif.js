@@ -3,15 +3,17 @@
  * Karateka GIF – Econovex (entorno test)
  *
  * Triggers configurados:
- *  - sale.order / action_confirm              → "¡CONFIRMADO!" en verde
- *  - account.move.send.wizard / action_send_and_print → "¡ENVIADO!" en blanco
- *  - sale.order / action_quotation_send → wizard correo → "¡ENVIADO!" en blanco
+ *  - sale.order / action_confirm                        → "¡CONFIRMADO!"   verde
+ *  - account.move / action_post                         → "¡Factura Creada!" azul
+ *  - account.move.send.wizard / action_send_and_print   → "¡ENVIADO!"      dorado
+ *  - sale.order / action_quotation_send → wizard correo → "¡ENVIADO!"      dorado
  */
 
 import { registry } from "@web/core/registry";
 
-// ── Configuración ─────────────────────────────────────────────────────────────
-const GIF_URL = "/econovex_karateka/static/src/img/karateka.gif";
+// ── GIFs disponibles ──────────────────────────────────────────────────────────
+const GIF_FIGHTER  = "/econovex_karateka/static/src/img/karateka.gif";
+const GIF_FACTURA  = "/econovex_karateka/static/src/img/factura.gif";
 const GIF_DURATION_MS = 3500;
 const DEBUG = false;
 
@@ -20,19 +22,28 @@ function log(...args) {
 }
 
 // ── Triggers ──────────────────────────────────────────────────────────────────
-// Cada trigger lleva su propio texto y color de cartel.
+// Cada trigger: model, method, label, labelColor, gifUrl
 const DIRECT_TRIGGERS = [
     {
         model: "sale.order",
         method: "action_confirm",
         label: "¡CONFIRMADO!",
         labelColor: "#4caf50",
+        gifUrl: GIF_FIGHTER,
+    },
+    {
+        model: "account.move",
+        method: "action_post",
+        label: "¡Factura Creada!",
+        labelColor: "#2196f3",
+        gifUrl: GIF_FACTURA,
     },
     {
         model: "account.move.send.wizard",
         method: "action_send_and_print",
         label: "¡ENVIADO!",
         labelColor: "#ffd700",
+        gifUrl: GIF_FIGHTER,
     },
 ];
 
@@ -46,6 +57,7 @@ const WIZARD_SENDERS = [
         method: "action_send_mail",
         label: "¡ENVIADO!",
         labelColor: "#ffd700",
+        gifUrl: GIF_FIGHTER,
     },
 ];
 
@@ -60,7 +72,7 @@ function handleTrigger(model, method) {
 
     const direct = findTrigger(DIRECT_TRIGGERS, model, method);
     if (direct) {
-        showKaratekaGif(direct.label, direct.labelColor);
+        showKaratekaGif(direct.label, direct.labelColor, direct.gifUrl);
         return;
     }
 
@@ -74,7 +86,7 @@ function handleTrigger(model, method) {
         const sender = findTrigger(WIZARD_SENDERS, model, method);
         if (sender) {
             pendingKarateka = false;
-            showKaratekaGif(sender.label, sender.labelColor);
+            showKaratekaGif(sender.label, sender.labelColor, sender.gifUrl);
         }
     }
 }
@@ -121,7 +133,7 @@ style.textContent = `
 document.head.appendChild(style);
 
 // ── Mostrar overlay ───────────────────────────────────────────────────────────
-function showKaratekaGif(label = "¡ENVIADO!", labelColor = "#ffffff") {
+function showKaratekaGif(label = "¡ENVIADO!", labelColor = "#ffd700", gifUrl = GIF_FIGHTER) {
     if (document.getElementById("karatekaOverlay")) return;
     log("¡Mostrando overlay!", label);
 
@@ -129,7 +141,7 @@ function showKaratekaGif(label = "¡ENVIADO!", labelColor = "#ffffff") {
     overlay.id = "karatekaOverlay";
 
     const img = document.createElement("img");
-    img.src = GIF_URL + "?t=" + Date.now();
+    img.src = gifUrl + "?t=" + Date.now();
     img.alt = "¡KARATEKA!";
     img.onerror = () => {
         img.remove();
