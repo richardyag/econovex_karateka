@@ -22,21 +22,18 @@ function log(...args) {
 
 // ── Triggers ──────────────────────────────────────────────────────────────────
 const DIRECT_TRIGGERS = [
-    { model: "sale.order", method: "action_confirm" },
+    { model: "sale.order",               method: "action_confirm" },
+    // En Odoo 19 el wizard de envío de facturas usa este modelo y método
+    { model: "account.move.send.wizard", method: "action_send_and_print" },
 ];
 
 const WIZARD_OPENERS = [
-    { model: "sale.order",   method: "action_quotation_send" },
-    { model: "account.move", method: "action_send_and_print" },
+    { model: "sale.order", method: "action_quotation_send" },
 ];
 
-// Cuando un wizard de envío se confirma, el botón del wizard
-// también pasa por doActionButton (o por orm.call).
-// Cubrimos ambas posibilidades en WIZARD_SENDERS.
+// Cuando el wizard de presupuesto envía el correo
 const WIZARD_SENDERS = [
     { model: "mail.compose.message", method: "action_send_mail" },
-    { model: "account.move.send",    method: "action_send_and_print" },
-    { model: "account.move.send",    method: "action_send" },
 ];
 
 let pendingKarateka = false;
