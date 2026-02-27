@@ -26,13 +26,13 @@ const DIRECT_TRIGGERS = [
         model: "sale.order",
         method: "action_confirm",
         label: "¡CONFIRMADO!",
-        labelColor: "#4caf50",   // verde
+        labelColor: "#ffd700",
     },
     {
         model: "account.move.send.wizard",
         method: "action_send_and_print",
         label: "¡ENVIADO!",
-        labelColor: "#ffffff",
+        labelColor: "#ffd700",
     },
 ];
 
@@ -45,7 +45,7 @@ const WIZARD_SENDERS = [
         model: "mail.compose.message",
         method: "action_send_mail",
         label: "¡ENVIADO!",
-        labelColor: "#ffffff",
+        labelColor: "#ffd700",
     },
 ];
 
@@ -84,35 +84,38 @@ const style = document.createElement("style");
 style.textContent = `
     #karatekaOverlay {
         position: fixed; inset: 0;
-        background: rgba(0,0,0,0.65);
+        background: rgba(0,0,0,0.82);
         z-index: 99999;
         display: flex; flex-direction: column;
         align-items: center; justify-content: center;
         cursor: pointer;
-        animation: karatekaIn 0.25s ease;
+        animation: karatekaIn 0.2s ease;
     }
     @keyframes karatekaIn {
-        from { opacity:0; transform:scale(0.85); }
+        from { opacity:0; transform:scale(0.88); }
         to   { opacity:1; transform:scale(1);    }
     }
     #karatekaOverlay img {
-        max-width: 80vw; max-height: 75vh;
+        max-width: 80vw; max-height: 72vh;
         border-radius: 12px;
-        box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+        border: 3px solid #ffd700;
+        box-shadow: 0 0 40px rgba(255,215,0,0.5), 0 24px 64px rgba(0,0,0,0.8);
     }
     #karatekaOverlay .karateka-fallback {
-        font-size: 110px; line-height: 1;
-        animation: karatekaKick 0.4s ease;
+        font-size: 120px; line-height: 1;
+        filter: drop-shadow(0 0 20px rgba(255,215,0,0.8));
+        animation: karatekaKick 0.35s ease;
     }
     @keyframes karatekaKick {
-        0%   { transform: rotate(-10deg) translateX(-30px); }
-        60%  { transform: rotate(15deg)  translateX(20px);  }
-        100% { transform: rotate(0deg)   translateX(0);     }
+        0%   { transform: rotate(-15deg) translateX(-40px) scale(0.8); }
+        65%  { transform: rotate(10deg)  translateX(15px)  scale(1.1); }
+        100% { transform: rotate(0deg)   translateX(0)     scale(1);   }
     }
     #karatekaOverlay .karateka-label {
-        margin-top: 20px; font-size: 2.2rem; font-weight: 800;
-        text-shadow: 0 2px 10px rgba(0,0,0,0.9);
-        letter-spacing: 3px;
+        margin-top: 22px; font-size: 2.4rem; font-weight: 900;
+        color: #ffd700;
+        text-shadow: 0 0 20px rgba(255,215,0,0.7), 0 2px 8px rgba(0,0,0,1);
+        letter-spacing: 4px;
     }
 `;
 document.head.appendChild(style);
@@ -132,7 +135,7 @@ function showKaratekaGif(label = "¡ENVIADO!", labelColor = "#ffffff") {
         img.remove();
         const kick = document.createElement("div");
         kick.className = "karateka-fallback";
-        kick.textContent = "🥋";
+        kick.textContent = "🥊";
         overlay.appendChild(kick);
     };
 
